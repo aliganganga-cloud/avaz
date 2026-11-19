@@ -1,3 +1,4 @@
+import html
 import logging
 import os
 import random
@@ -18,10 +19,16 @@ ADMIN_ID = int(_admin_env) if _admin_env.isdigit() else None
 
 POEMS = [
     "«راز دل با کس مگو، جز با حریمِ این سکوت...\nهر چه در سینه نهان داری، به دستِ باد سپار.»\n\nپیامت را نگارنده باش (متن، عکس، ویس یا آوا):",
-    "«در این سراچه بی‌پایان، هیچ ردپایی از تو نمی‌ماند؛\nحرف‌هایت را بی‌پروا بر سنگِ این خلوت حک کن.»\n\nهر چه در دل داری، به قلم آور:",
-    "«از خویش بگو و هر چه از غبارِ روزگار بر دل نشسته...\nاینجا آواژ، محرمِ رازِ بی‌نامِ توست.»\n\nنوشته یا پیام خود را بفرست:",
-    "«پنهان مکن ز ما، که سخن را بهانه‌ایست...\nبی‌نام و نشان، حکایتِ دل را به ما رسان.»\n\nپیامت را بفرست، که شنواست گوشِ این خلوت:",
+    "«در این سراچه بی‌پایان،\nحرف‌هایت را بی‌پروا بر سنگِ این خلوت حک کن.»\n\nهر چه در دل داری، به قلم آور:",
+    "«از خویش بگو و هر چه از غبارِ روزگار بر دل نشسته...\nاینجا آواژ، محرمِ رازِ توست.»\n\nنوشته یا پیام خود را بفرست:",
+    "«پنهان مکن ز ما، که سخن را بهانه‌ایست...\nحکایتِ دل را به ما رسان.»\n\nپیامت را بفرست، که شنواست گوشِ این خلوت:",
 ]
+
+# هشدار صادقانه برای فرستنده‌ها (چون مشخصاتشان برای مدیر نمایش داده می‌شود)
+NOTICE = (
+    "\n\n⚠️ توجه: نام، یوزرنیم و شناسه‌ی تلگرام تو همراه پیامت "
+    "برای مدیر ربات نمایش داده می‌شود."
+)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -45,8 +52,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         link = f"https://t.me/{bot_username}?start=anon"
         text = (
             "سلام مدیر عزیز! 👋\n\n"
-            f"لینک اختصاصی پیام ناشناس آواژ:\n{link}\n\n"
-            "پیام‌ها بدون هیچ مشخصاتی از فرستنده برایتان می‌آید. "
+            f"لینک اختصاصی پیام آواژ:\n{link}\n\n"
+            "پیام‌ها همراه با نام، یوزرنیم و شناسه‌ی فرستنده برایتان می‌آید. "
             "برای پاسخ دادن، روی همان پیام ریپلای کنید."
         )
         if newly_claimed:
@@ -58,11 +65,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         await update.message.reply_text(text)
     else:
-        await update.message.reply_text(random.choice(POEMS))
+        await update.message.reply_text(random.choice(POEMS) + NOTICE)
 
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    sender_id = update.effective_user.id
+    sender = update.effective_user
+    sender_id = sender.id
     message = update.message
 
     # --- پیام از طرف مدیر: پاسخ به یک فرستنده ---
@@ -96,17 +104,32 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("💡 برای پاسخ‌دهی، حتماً روی پیام مورد نظر ریپلای کنید.")
         return
 
-    # --- پیام از طرف یک کاربر عادی: ارسال ناشناس برای مدیر ---
+    # --- پیام از طرف یک کاربر عادی: ارسال برای مدیر همراه با مشخصات ---
     if ADMIN_ID is None:
         await message.reply_text("⏳ ربات هنوز آماده نیست. کمی بعد دوباره تلاش کن.")
         return
 
     try:
+        name_str = html.escape(sender.full_name or "ندارد")
+        username_str = f"@{html.escape(sender.username)}" if sender.username else "ندارد"
+
+        info_text = (
+            "📬 <b>نجوایی تازه در آواژ:</b>\n"
+            f"👤 نام: {name_str}\n"
+            f"🆔 یوزرنیم: {username_str}\n"
+            f"🔢 شناسه: <code>{sender_id}</code>\n"
+            "-------------------"
+        )
+        info_msg = await context.bot.send_message(
+            chat_id=ADMIN_ID, text=info_text, parse_mode="HTML"
+        )
         copied = await context.bot.copy_message(
             chat_id=ADMIN_ID,
             from_chat_id=message.chat_id,
             message_id=message.message_id,
         )
+        # ریپلای روی هر کدام از دو پیام (مشخصات یا خود پیام) کار می‌کند
+        context.bot_data[info_msg.message_id] = sender_id
         context.bot_data[copied.message_id] = sender_id
 
         await message.reply_text(
